@@ -98,6 +98,10 @@ public final class LambdaExpression<F>  {
 		return lambdaE;
 	}
 
+	public static <T> LambdaExpression<T> parseLambdaMethod(Member member, T lambda, Object[] capturedArgs) {
+		return new ExpressionClassCracker().parseLambdaMethod(member, lambda, capturedArgs);
+	}
+
 	/**
 	 * Produces a {@link Function} that represents the lambda expression.
 	 * 

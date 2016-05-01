@@ -183,6 +183,18 @@ class ExpressionClassCracker {
 		throw new IllegalArgumentException("Not a lambda expression. No non-default method.");
 	}
 
+	@SuppressWarnings("unchecked")
+	<T> LambdaExpression<T> parseLambdaMethod(Member member, T lambda, Object[] capturedArgs) {
+		ExpressionClassVisitor visitor = parseClass(member.getDeclaringClass().getClassLoader(),
+				member.getDeclaringClass().getName().replace('.', '/') + ".class", lambda, (Method) member);
+		LambdaExpression<?> lambdaExpression = createLambda(visitor, capturedArgs);
+
+		// InstanceAdaptor.normalize((InvocableExpression)
+		// lambdaExpression.getBody(), lambdaExpression.getParameters());
+		return (LambdaExpression<T>) lambdaExpression;
+
+	}
+
 	private ExpressionClassVisitor parseClass(ClassLoader classLoader, String classFilePath, Object lambda,
 			Method method) {
 		return parseClass(classLoader, classFilePath, lambda, method.getName(), Type.getMethodDescriptor(method));
