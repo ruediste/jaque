@@ -11,46 +11,142 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.Frame;
+import org.objectweb.asm.tree.analysis.SourceInterpreter;
+import org.objectweb.asm.tree.analysis.SourceValue;
 
 import com.trigersoft.jaque.expression.LambdaExpression;
 
 public class LambdaInformationWeaver extends ClassVisitor {
+
+	private String className;
 
 	public LambdaInformationWeaver(ClassVisitor cv) {
 		super(Opcodes.ASM5, cv);
 	}
 
 	@Override
+	public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+		super.visit(version, access, name, signature, superName, interfaces);
+		this.className = name;
+	}
+
+	@Override
 	public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
-		return new MethodVisitor(Opcodes.ASM5, super.visitMethod(access, name, desc, signature, exceptions)) {
+		MethodNode mn = new MethodNode(access, name, desc, null, null);
+		MethodVisitor next = super.visitMethod(access, name, desc, signature, exceptions);
+		return new MethodVisitor(Opcodes.ASM5, mn) {
+
 			@Override
-			public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
-				if (bsm.getTag() == Opcodes.H_INVOKESTATIC
-						&& "java/lang/invoke/LambdaMetafactory".equals(bsm.getOwner())
-						&& "metafactory".equals(bsm.getName())) {
-					// we are processing a lamda creation, replace with our own
-					// metafactory
-					super.visitInvokeDynamicInsn(name, desc,
-							new Handle(Opcodes.H_INVOKESTATIC, Type.getInternalName(LambdaInformationWeaver.class),
-									"metafactory",
-									"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;"),
-							bsmArgs);
+			public void visitEnd() {
+				Frame<SourceValue>[] frames;
+				try {
+					frames = new Analyzer<>(new SourceInterpreter()).analyze(className, mn);
+				} catch (AnalyzerException e) {
+					throw new RuntimeException("Error while analyzing method", e);
+				}
 
-				} else
-					super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
+				AbstractInsnNode[] instructions = mn.instructions.toArray();
+				Map<InvokeDynamicInsnNode, Set<UsingParameter>> map = new HashMap<>();
+				for (int idx = 0; idx < frames.length; idx++) {
+					Frame<SourceValue> frame = frames[idx];
+					AbstractInsnNode instruction = instructions[idx];
+					int tag = -1;
+					switch (instruction.getOpcode()) {
+					case Opcodes.INVOKEINTERFACE:
+						tag = Opcodes.H_INVOKEINTERFACE;
+						break;
+					case Opcodes.INVOKESTATIC:
+						tag = Opcodes.H_INVOKESTATIC;
+						break;
+					case Opcodes.INVOKEVIRTUAL:
+						tag = Opcodes.H_INVOKEVIRTUAL;
+						break;
+					case Opcodes.INVOKESPECIAL:
+						tag = Opcodes.H_INVOKESPECIAL;
+						break;
+
+					}
+
+					if (tag != -1) {
+						MethodInsnNode methodInsn = (MethodInsnNode) instruction;
+						Type[] argumentTypes = Type.getArgumentTypes(methodInsn.desc);
+						for (int i = 0; i < argumentTypes.length; i++) {
+							for (AbstractInsnNode sourceInstruction : frame
+									.getStack(frame.getStackSize() - i - 1).insns) {
+								if (sourceInstruction.getOpcode() == Opcodes.INVOKEDYNAMIC) {
+									InvokeDynamicInsnNode invokeDynamic = (InvokeDynamicInsnNode) sourceInstruction;
+									map.computeIfAbsent(invokeDynamic, x -> new HashSet<>()).add(new UsingParameter(
+											new Handle(tag, methodInsn.owner, methodInsn.name, methodInsn.desc), i));
+								}
+							}
+						}
+					}
+				}
+
+				// iterate all instructions
+				for (AbstractInsnNode instruction : instructions) {
+					// only process invoke dynamic instructions
+					if (instruction.getOpcode() != Opcodes.INVOKEDYNAMIC)
+						continue;
+					InvokeDynamicInsnNode insn = (InvokeDynamicInsnNode) instruction;
+
+					// only process invocations of the lambda meta factory
+					Handle bsm = insn.bsm;
+					if (bsm.getTag() != Opcodes.H_INVOKESTATIC
+							|| !"java/lang/invoke/LambdaMetafactory".equals(bsm.getOwner())
+							|| !"metafactory".equals(bsm.getName())) {
+						continue;
+					}
+
+					Set<UsingParameter> usingParameters = map.get(insn);
+					if (usingParameters != null && usingParameters.size() == 1) {
+						UsingParameter usingParameter = usingParameters.iterator().next();
+						// switch to custom meta factory with using parameter
+						// information
+						insn.bsm = new Handle(Opcodes.H_INVOKESTATIC,
+								Type.getInternalName(LambdaInformationWeaver.class), "metafactory2",
+								"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;I)Ljava/lang/invoke/CallSite;");
+						Object[] newArgs = Arrays.copyOf(insn.bsmArgs, 5);
+						newArgs[3] = usingParameter.usingMethod;
+						newArgs[4] = usingParameter.paramIndex;
+						insn.bsmArgs = newArgs;
+					} else {
+						// switch to custom meta factory without using parameter
+						// information
+						insn.bsm = new Handle(Opcodes.H_INVOKESTATIC,
+								Type.getInternalName(LambdaInformationWeaver.class), "metafactory",
+								"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;");
+
+					}
+
+				}
+
+				mn.accept(next);
 			}
-
 		};
 	}
 
 	/**
-	 * Custom metafactory to capture lambda information
+	 * Custom metafactory to capture lambda information. This version does not
+	 * get information about the method parameter using the result
 	 */
 	public static CallSite metafactory(MethodHandles.Lookup caller, String invokedName, MethodType invokedType,
 			/* argarray: */MethodType samMethodType, MethodHandle implMethod, MethodType instantiatedMethodType)
@@ -59,20 +155,50 @@ public class LambdaInformationWeaver extends ClassVisitor {
 		CallSite result = LambdaMetafactory.metafactory(caller, invokedName, invokedType, samMethodType, implMethod,
 				instantiatedMethodType);
 		if (CapturingLambda.class.isAssignableFrom(invokedType.returnType())) {
-			MethodHandle lambdaHandle = result.dynamicInvoker();
-			Member calledMethod = MethodHandles.reflectAs(Member.class, implMethod);
-			Class<?> lambdaInterface = lambdaHandle.type().returnType();
 
-			MethodHandle wrapHandle = MethodHandles.publicLookup()
-					.findStatic(LambdaInformationWeaver.class, "wrap",
-							MethodType.methodType(Object.class, Member.class, Class.class, MethodHandle.class,
-									Object[].class))
-					.bindTo(calledMethod).bindTo(lambdaInterface).bindTo(lambdaHandle)
-					.asCollector(Object[].class, lambdaHandle.type().parameterCount()).asType(lambdaHandle.type());
-
-			result = new ConstantCallSite(wrapHandle);
+			result = doWrap(implMethod, result);
 		}
 		return result;
+	}
+
+	/**
+	 * Custom metafactory to capture lambda information. This version get's
+	 * passed information about the parameter using the created value.
+	 */
+	public static CallSite metafactory2(MethodHandles.Lookup caller, String invokedName, MethodType invokedType,
+			/* argarray: */MethodType samMethodType, MethodHandle implMethod, MethodType instantiatedMethodType,
+			MethodHandle usingMethodHandle, int usingParameterIndex)
+					throws LambdaConversionException, NoSuchMethodException, IllegalAccessException {
+
+		CallSite result = LambdaMetafactory.metafactory(caller, invokedName, invokedType, samMethodType, implMethod,
+				instantiatedMethodType);
+		boolean doWrap = CapturingLambda.class.isAssignableFrom(invokedType.returnType());
+
+		if (!doWrap) {
+			Method usingMethod = MethodHandles.reflectAs(Method.class, usingMethodHandle);
+			doWrap = usingMethod.getParameters()[usingParameterIndex].isAnnotationPresent(Capture.class);
+		}
+		if (doWrap) {
+			result = doWrap(implMethod, result);
+		}
+		return result;
+	}
+
+	private static ConstantCallSite doWrap(MethodHandle implMethod, CallSite innerCallsite)
+			throws NoSuchMethodException, IllegalAccessException {
+		MethodHandle lambdaHandle = innerCallsite.dynamicInvoker();
+		Member calledMethod = MethodHandles.reflectAs(Member.class, implMethod);
+		Class<?> lambdaInterface = lambdaHandle.type().returnType();
+
+		MethodHandle wrapHandle = MethodHandles.publicLookup()
+				.findStatic(LambdaInformationWeaver.class, "wrap",
+						MethodType.methodType(Object.class, Member.class, Class.class, MethodHandle.class,
+								Object[].class))
+				.bindTo(calledMethod).bindTo(lambdaInterface).bindTo(lambdaHandle)
+				.asCollector(Object[].class, lambdaHandle.type().parameterCount()).asType(lambdaHandle.type());
+
+		ConstantCallSite tmp = new ConstantCallSite(wrapHandle);
+		return tmp;
 	}
 
 	private static class InfoInvocationHandler implements InvocationHandler {
@@ -96,17 +222,13 @@ public class LambdaInformationWeaver extends ClassVisitor {
 			return member;
 		}
 
-		public Object[] getCapturedArgs() {
-			return capturedArgs;
-		}
-
 	}
 
 	public static Member getMember(CapturingLambda lambda) {
 		return ((InfoInvocationHandler) Proxy.getInvocationHandler(lambda)).getMember();
 	}
 
-	public static LambdaExpression<?> getLambdaExpression(CapturingLambda lambda) {
+	public static LambdaExpression<?> getLambdaExpression(Object lambda) {
 		InfoInvocationHandler handler = (InfoInvocationHandler) Proxy.getInvocationHandler(lambda);
 		return LambdaExpression.parseLambdaMethod(handler.member, lambda, handler.capturedArgs);
 	}
@@ -117,4 +239,17 @@ public class LambdaInformationWeaver extends ClassVisitor {
 		return Proxy.newProxyInstance(lambdaInterface.getClassLoader(), new Class<?>[] { lambdaInterface },
 				new InfoInvocationHandler(member, lambda, args));
 	}
+
+	private static class UsingParameter {
+		Handle usingMethod;
+		int paramIndex;
+
+		public UsingParameter(Handle usingMethod, int paramIndex) {
+			super();
+			this.usingMethod = usingMethod;
+			this.paramIndex = paramIndex;
+		}
+
+	}
+
 }

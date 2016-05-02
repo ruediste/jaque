@@ -5,6 +5,7 @@ import static org.junit.Assert.assertEquals;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Member;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -104,6 +105,47 @@ public class LambdaInformationWeaverTest {
 		Member member = LambdaInformationWeaver.getMember(lambda);
 		LambdaExpression<?> exp = LambdaInformationWeaver.getLambdaExpression(lambda);
 		assertEquals(B.class.getName(), member.getDeclaringClass().getName());
+	}
+	
+	public static class Api{
+		private Supplier<String> supplier;
+
+		public void invoke(@Capture Supplier<String> supplier){
+			this.supplier = supplier;
+			
+		}
+	}
+	public static class C implements Consumer<Api> {
+		@Override
+		public void accept(Api api) {
+			api.invoke(()->"Hello World");
+		}
+	}
+	
+	@Test
+	public void testCaptureSupplier() throws Exception{
+		Api api = new Api();
+		Consumer<Api> c=load(C.class);
+		c.accept(api);
+		LambdaExpression<?> lamda = LambdaInformationWeaver.getLambdaExpression(api.supplier);
+		assertEquals("{() -> Hello World}", lamda.toString());
+	}
+	
+	public static class D implements Consumer<Api> {
+		@Override
+		public void accept(Api api) {
+			int i=1;
+			api.invoke(()->"Hello World "+i);
+		}
+	}
+	
+	@Test
+	public void testCaptureSupplierWithCaptured() throws Exception{
+		Api api = new Api();
+		Consumer<Api> c=load(D.class);
+		c.accept(api);
+		LambdaExpression<?> lamda = LambdaInformationWeaver.getLambdaExpression(api.supplier);
+		assertEquals("{() -> java.lang.StringBuilder.<new>(Hello World ).append(P0).toString()(1)}", lamda.toString());
 	}
 
 }
