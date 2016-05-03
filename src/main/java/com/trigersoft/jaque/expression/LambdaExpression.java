@@ -135,7 +135,6 @@ public final class LambdaExpression<F>  {
 	@Override
 	public String toString() {
 		StringBuilder b = new StringBuilder();
-		b.append('{');
 		b.append('(');
 		if (_paramTypes.size() > 0) {
 			for (int i = 0; i < _paramTypes.size(); i++) {
@@ -150,6 +149,7 @@ public final class LambdaExpression<F>  {
 		}
 		b.append(')');
 		b.append(" -> ");
+		b.append('{');
 		b.append(getBody().toString());
 		b.append('}');
 		return b.toString();

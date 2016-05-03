@@ -106,46 +106,67 @@ public class LambdaInformationWeaverTest {
 		LambdaExpression<?> exp = LambdaInformationWeaver.getLambdaExpression(lambda);
 		assertEquals(B.class.getName(), member.getDeclaringClass().getName());
 	}
-	
-	public static class Api{
+
+	public static class E implements Function<String, CaptureFunction<String, String>> {
+
+		String field = "fieldStr";
+
+		@Override
+		public CaptureFunction<String, String> apply(String t) {
+			return arg -> "hello " + t + " " + arg + " " + field;
+		}
+
+	}
+
+	@Test
+	public void testWiththisReference() throws Exception {
+		Function<String, CaptureFunction<String, String>> function = load(E.class);
+		CaptureFunction<String, String> lambda = function.apply("7");
+		assertEquals("hello 7 2 fieldStr", lambda.apply("2"));
+		LambdaExpression<?> exp = LambdaInformationWeaver.getLambdaExpression(lambda);
+		assertEquals("", exp.toString());
+	}
+
+	public static class Api {
 		private Supplier<String> supplier;
 
-		public void invoke(@Capture Supplier<String> supplier){
+		public void invoke(@Capture Supplier<String> supplier) {
 			this.supplier = supplier;
-			
+
 		}
 	}
+
 	public static class C implements Consumer<Api> {
 		@Override
 		public void accept(Api api) {
-			api.invoke(()->"Hello World");
+			api.invoke(() -> "Hello World");
 		}
 	}
-	
+
 	@Test
-	public void testCaptureSupplier() throws Exception{
+	public void testCaptureSupplier() throws Exception {
 		Api api = new Api();
-		Consumer<Api> c=load(C.class);
+		Consumer<Api> c = load(C.class);
 		c.accept(api);
 		LambdaExpression<?> lamda = LambdaInformationWeaver.getLambdaExpression(api.supplier);
-		assertEquals("{() -> Hello World}", lamda.toString());
+		assertEquals("() -> {Hello World}", lamda.toString());
 	}
-	
+
 	public static class D implements Consumer<Api> {
 		@Override
 		public void accept(Api api) {
-			int i=1;
-			api.invoke(()->"Hello World "+i);
+			int i = 1;
+			api.invoke(() -> "Hello World " + i);
 		}
 	}
-	
+
 	@Test
-	public void testCaptureSupplierWithCaptured() throws Exception{
+	public void testCaptureSupplierWithCaptured() throws Exception {
 		Api api = new Api();
-		Consumer<Api> c=load(D.class);
+		Consumer<Api> c = load(D.class);
 		c.accept(api);
 		LambdaExpression<?> lamda = LambdaInformationWeaver.getLambdaExpression(api.supplier);
-		assertEquals("{() -> java.lang.StringBuilder.<new>(Hello World ).append(P0).toString()(1)}", lamda.toString());
+		assertEquals("() -> {java.lang.StringBuilder.<new>(Hello World ).append(P0).toString()(1)}", lamda.toString());
 	}
 
 }

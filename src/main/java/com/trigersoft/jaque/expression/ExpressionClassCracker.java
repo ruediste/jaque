@@ -22,6 +22,7 @@ import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -185,8 +186,15 @@ class ExpressionClassCracker {
 
 	@SuppressWarnings("unchecked")
 	<T> LambdaExpression<T> parseLambdaMethod(Member member, T lambda, Object[] capturedArgs) {
-		ExpressionClassVisitor visitor = parseClass(member.getDeclaringClass().getClassLoader(),
-				member.getDeclaringClass().getName().replace('.', '/') + ".class", lambda, (Method) member);
+		ExpressionClassVisitor visitor;
+		{
+			Object this_ = null;
+			if ((member.getModifiers() & Modifier.STATIC) == 0) {
+				this_ = capturedArgs[0];
+			}
+			visitor = parseClass(member.getDeclaringClass().getClassLoader(),
+					member.getDeclaringClass().getName().replace('.', '/') + ".class", this_, (Method) member);
+		}
 		LambdaExpression<?> lambdaExpression = createLambda(visitor, capturedArgs);
 
 		// InstanceAdaptor.normalize((InvocableExpression)
@@ -202,7 +210,7 @@ class ExpressionClassCracker {
 
 	private ExpressionClassVisitor parseClass(ClassLoader classLoader, String classFilePath, Object lambda,
 			String method, String methodDescriptor) {
-		ExpressionClassVisitor visitor = new ExpressionClassVisitor(lambda, method, methodDescriptor);
+		ExpressionClassVisitor visitor = new ExpressionClassVisitor(lambda, method, methodDescriptor,classLoader);
 		try {
 			try (InputStream classStream = getResourceAsStream(classLoader, classFilePath)) {
 				ClassReader reader = new ClassReader(classStream);

@@ -38,6 +38,7 @@ final class ExpressionClassVisitor extends ClassVisitor {
 	private Class<?> _type;
 	private Class<?>[] _argTypes;
 	private Type _objectType;
+	private ClassLoader classLoader;
 
 	Expression getResult() {
 		return _result;
@@ -52,14 +53,17 @@ final class ExpressionClassVisitor extends ClassVisitor {
 	}
 
 	Class<?>[] getParameterTypes() {
-		
+
 		return _argTypes;
 	}
 
-	public ExpressionClassVisitor(Object lambda, String method,
-			String methodDescriptor) {
+	public ExpressionClassVisitor(Object this_, String method, String methodDescriptor, ClassLoader classLoader) {
 		super(Opcodes.ASM5);
-		_me = Expression.this_( lambda,lambda.getClass());
+		this.classLoader = classLoader;
+		if (this_ == null)
+			_me = null;
+		else
+			_me = Expression.this_(this_, this_.getClass());
 		_method = method;
 		_methodDesc = methodDescriptor;
 	}
@@ -89,16 +93,14 @@ final class ExpressionClassVisitor extends ClassVisitor {
 			String cn = t.getInternalName();
 			cn = cn != null ? cn.replace('/', '.') : t.getClassName();
 
-			return Class.forName(cn, false, _me.getResultType()
-					.getClassLoader());
+			return Class.forName(cn, false, classLoader);
 		} catch (ClassNotFoundException e) {
 			throw new RuntimeException(e);
 		}
 	}
 
 	@Override
-	public MethodVisitor visitMethod(int access, String name, String desc,
-			String signature, String[] exceptions) {
+	public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
 
 		if (!_method.equals(name) || !_methodDesc.equals(desc))
 			return null;
@@ -118,8 +120,7 @@ final class ExpressionClassVisitor extends ClassVisitor {
 		if (_objectType != null && (access & Opcodes.ACC_STATIC) == 0) {
 			try {
 				Class<?> implClass = getClass(_objectType);
-				_result = Expression.invoke(Expression.parameter(implClass, 0),
-						name, argTypes);
+				_result = Expression.invoke(Expression.parameter(implClass, 0), name, argTypes);
 
 				_argTypes = new Class<?>[argTypes.length + 1];
 				_argTypes[0] = implClass;
@@ -133,13 +134,11 @@ final class ExpressionClassVisitor extends ClassVisitor {
 
 		_argTypes = argTypes;
 
-		return new ExpressionMethodVisitor(this,
-				(access & Opcodes.ACC_STATIC) == 0 ? _me : null, argTypes);
+		return new ExpressionMethodVisitor(this, (access & Opcodes.ACC_STATIC) == 0 ? _me : null, argTypes);
 	}
 
 	@Override
-	public void visit(int version, int access, String name, String signature,
-			String superName, String[] interfaces) {
+	public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
 
 		// potentially a method reference - store object type
 		if ((access & Opcodes.ACC_SYNTHETIC) == 0)

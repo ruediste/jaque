@@ -230,7 +230,7 @@ public class LambdaInformationWeaver extends ClassVisitor {
 
 	public static LambdaExpression<?> getLambdaExpression(Object lambda) {
 		InfoInvocationHandler handler = (InfoInvocationHandler) Proxy.getInvocationHandler(lambda);
-		return LambdaExpression.parseLambdaMethod(handler.member, lambda, handler.capturedArgs);
+		return LambdaExpression.parseLambdaMethod(handler.member, handler.lambda, handler.capturedArgs);
 	}
 
 	public static Object wrap(Member member, Class<?> lambdaInterface, MethodHandle lambdaHandle, Object[] args)
