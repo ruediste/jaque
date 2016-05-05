@@ -26,9 +26,11 @@ package com.trigersoft.jaque.expression;
 public class UnaryExpression extends Expression {
 
 	private final Expression _operand;
+	private final UnaryExpressionType expressionType;
 
-	UnaryExpression(int expressionType, Class<?> resultType, Expression operand) {
-		super(expressionType, resultType);
+	UnaryExpression(UnaryExpressionType expressionType, Class<?> resultType, Expression operand) {
+		super(resultType);
+		this.expressionType = expressionType;
 
 		if (operand == null)
 			throw new NullPointerException("operand");
@@ -81,7 +83,7 @@ public class UnaryExpression extends Expression {
 	public String toString() {
 		StringBuilder b = new StringBuilder();
 
-		if (getExpressionType() == ExpressionType.Convert) {
+		if (expressionType == UnaryExpressionType.Convert) {
 			b.append("((");
 			b.append(getResultType().getName());
 			b.append(')');
@@ -89,10 +91,14 @@ public class UnaryExpression extends Expression {
 			b.append(')');
 
 		} else {
-			b.append(ExpressionType.toString(getExpressionType()));
+			b.append(expressionType);
 			b.append(getFirst().toString());
 		}
 
 		return b.toString();
+	}
+
+	public UnaryExpressionType getExpressionType() {
+		return expressionType;
 	}
 }

@@ -76,4 +76,10 @@ public interface ExpressionVisitor<T> {
 	T visit(UnaryExpression e);
 
 	T visit(LambdaInvocationExpression lambdaInvocationExpression);
+
+	T visit(TenaryExpression tenaryExpression);
+
+	T visit(CapturedArgumentExpression capturedArgumentExpression);
+
+	T visit(GetLocalVariableExpression getLocalVariableExpression);
 }

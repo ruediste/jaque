@@ -38,7 +38,6 @@ import java.util.Objects;
  * @author <a href="mailto://kostat@trigersoft.com">Konstantin Triger</a>
  */
 public abstract class Expression {
-	private final int _expressionType;
 	private final Class<?> _resultType;
 
 	static private final HashMap<Method, Class<?>> _boxers;
@@ -112,20 +111,11 @@ public abstract class Expression {
 		return type == Boolean.TYPE || type == Boolean.class;
 	}
 
-	private static Expression stripConverts(Expression e) {
-		while (e.getExpressionType() == ExpressionType.Convert)
+	public static Expression stripConverts(Expression e) {
+		while (e instanceof UnaryExpression && ((UnaryExpression) e).getExpressionType() == UnaryExpressionType.Convert)
 			e = ((UnaryExpression) e).getFirst();
 
 		return e;
-	}
-
-	/**
-	 * Gets the node type of this {@link Expression}.
-	 * 
-	 * @return One of the {@link ExpressionType} values.
-	 */
-	public final int getExpressionType() {
-		return _expressionType;
 	}
 
 	/**
@@ -142,18 +132,15 @@ public abstract class Expression {
 	/**
 	 * Initializes a new instance of the {@link Expression} class.
 	 * 
-	 * @param expressionType
-	 *            The {@link ExpressionType} to set as the node type.
 	 * @param resultType
 	 *            The {@link Class} to set as the type of the expression that
 	 *            this Expression represents.
 	 */
-	protected Expression(int expressionType, Class<?> resultType) {
+	protected Expression(Class<?> resultType) {
 
 		if (resultType == null)
 			throw new NullPointerException("resultType");
 
-		_expressionType = expressionType;
 		_resultType = resultType;
 	}
 
@@ -170,7 +157,7 @@ public abstract class Expression {
 	 *         set to the specified values.
 	 */
 	public static BinaryExpression add(Expression first, Expression second) {
-		return createNumeric(ExpressionType.Add, first, second);
+		return createNumeric(BinaryExpressionType.Add, first, second);
 	}
 
 	/**
@@ -186,7 +173,7 @@ public abstract class Expression {
 	 *         methods set to the specified values.
 	 */
 	public static BinaryExpression divide(Expression first, Expression second) {
-		return createNumeric(ExpressionType.Divide, first, second);
+		return createNumeric(BinaryExpressionType.Divide, first, second);
 	}
 
 	/**
@@ -202,7 +189,7 @@ public abstract class Expression {
 	 *         methods set to the specified values.
 	 */
 	public static BinaryExpression subtract(Expression first, Expression second) {
-		return createNumeric(ExpressionType.Subtract, first, second);
+		return createNumeric(BinaryExpressionType.Subtract, first, second);
 	}
 
 	/**
@@ -218,7 +205,7 @@ public abstract class Expression {
 	 *         methods set to the specified values.
 	 */
 	public static BinaryExpression multiply(Expression first, Expression second) {
-		return createNumeric(ExpressionType.Multiply, first, second);
+		return createNumeric(BinaryExpressionType.Multiply, first, second);
 	}
 
 	/**
@@ -234,7 +221,7 @@ public abstract class Expression {
 	 *         methods set to the specified values.
 	 */
 	public static BinaryExpression modulo(Expression first, Expression second) {
-		return createNumeric(ExpressionType.Modulo, first, second);
+		return createNumeric(BinaryExpressionType.Modulo, first, second);
 	}
 
 	/**
@@ -250,7 +237,7 @@ public abstract class Expression {
 	 *         methods set to the specified values.
 	 */
 	public static BinaryExpression greaterThan(Expression first, Expression second) {
-		return createNumericComparison(ExpressionType.GreaterThan, first, second);
+		return createNumericComparison(BinaryExpressionType.GreaterThan, first, second);
 	}
 
 	/**
@@ -266,7 +253,7 @@ public abstract class Expression {
 	 *         getSecond() methods set to the specified values.
 	 */
 	public static BinaryExpression greaterThanOrEqual(Expression first, Expression second) {
-		return createNumericComparison(ExpressionType.GreaterThanOrEqual, first, second);
+		return createNumericComparison(BinaryExpressionType.GreaterThanOrEqual, first, second);
 	}
 
 	/**
@@ -282,7 +269,7 @@ public abstract class Expression {
 	 *         methods set to the specified values.
 	 */
 	public static BinaryExpression lessThan(Expression first, Expression second) {
-		return createNumericComparison(ExpressionType.LessThan, first, second);
+		return createNumericComparison(BinaryExpressionType.LessThan, first, second);
 	}
 
 	/**
@@ -298,19 +285,21 @@ public abstract class Expression {
 	 *         getSecond() methods set to the specified values.
 	 */
 	public static BinaryExpression lessThanOrEqual(Expression first, Expression second) {
-		return createNumericComparison(ExpressionType.LessThanOrEqual, first, second);
+		return createNumericComparison(BinaryExpressionType.LessThanOrEqual, first, second);
 	}
 
-	private static BinaryExpression createNumericComparison(int expressionType, Expression first, Expression second) {
+	private static BinaryExpression createNumericComparison(BinaryExpressionType expressionType, Expression first,
+			Expression second) {
 		if (!first.isNumeric())
 			throw new IllegalArgumentException(first.getResultType().toString());
 		if (!second.isNumeric())
 			throw new IllegalArgumentException(second.getResultType().toString());
 
-		return new BinaryExpression(expressionType, Boolean.TYPE, null, first, second);
+		return new BinaryExpression(expressionType, Boolean.TYPE, first, second);
 	}
 
-	private static BinaryExpression createNumeric(int expressionType, Expression first, Expression second) {
+	private static BinaryExpression createNumeric(BinaryExpressionType expressionType, Expression first,
+			Expression second) {
 		boolean fnumeric = first.isNumeric();
 		boolean snumeric = second.isNumeric();
 		if (!fnumeric || !snumeric) {
@@ -323,16 +312,17 @@ public abstract class Expression {
 				second = TypeConverter.convert(second, first.getResultType());
 		}
 
-		return new BinaryExpression(expressionType, first.getResultType(), null, first, second);
+		return new BinaryExpression(expressionType, first.getResultType(), first, second);
 	}
 
-	private static BinaryExpression createIntegral(int expressionType, Expression first, Expression second) {
+	private static BinaryExpression createIntegral(BinaryExpressionType expressionType, Expression first,
+			Expression second) {
 		if (!first.isIntegral())
 			throw new IllegalArgumentException(first.getResultType().toString());
 		if (!second.isIntegral())
 			throw new IllegalArgumentException(second.getResultType().toString());
 
-		return new BinaryExpression(expressionType, first.getResultType(), null, first, second);
+		return new BinaryExpression(expressionType, first.getResultType(), first, second);
 	}
 
 	/**
@@ -348,7 +338,7 @@ public abstract class Expression {
 	 *         methods set to the specified values.
 	 */
 	public static BinaryExpression leftShift(Expression first, Expression second) {
-		return createIntegral(ExpressionType.LeftShift, first, second);
+		return createIntegral(BinaryExpressionType.LeftShift, first, second);
 	}
 
 	/**
@@ -364,7 +354,7 @@ public abstract class Expression {
 	 *         methods set to the specified values.
 	 */
 	public static BinaryExpression rightShift(Expression first, Expression second) {
-		return createIntegral(ExpressionType.RightShift, first, second);
+		return createIntegral(BinaryExpressionType.RightShift, first, second);
 	}
 
 	/**
@@ -384,7 +374,7 @@ public abstract class Expression {
 			throw new IllegalArgumentException(first.getResultType().toString());
 		if (second.getResultType().isPrimitive())
 			throw new IllegalArgumentException(second.getResultType().toString());
-		return new BinaryExpression(ExpressionType.Coalesce, first.getResultType(), null, first, second);
+		return new BinaryExpression(BinaryExpressionType.Coalesce, first.getResultType(), first, second);
 	}
 
 	/**
@@ -405,7 +395,7 @@ public abstract class Expression {
 		if (first.getResultType() != second.getResultType())
 			throw new IllegalArgumentException(
 					first.getResultType().toString() + " != " + second.getResultType().toString());
-		return createBooleanExpression(ExpressionType.Equal, first, second);
+		return createBooleanExpression(BinaryExpressionType.Equal, first, second);
 	}
 
 	/**
@@ -426,7 +416,7 @@ public abstract class Expression {
 		if (first.getResultType() != second.getResultType())
 			throw new IllegalArgumentException(
 					first.getResultType().toString() + " != " + second.getResultType().toString());
-		return createBooleanExpression(ExpressionType.NotEqual, first, second);
+		return createBooleanExpression(BinaryExpressionType.NotEqual, first, second);
 	}
 
 	/**
@@ -448,7 +438,7 @@ public abstract class Expression {
 			throw new IllegalArgumentException(first.getResultType().toString());
 		if (!second.isBoolean())
 			throw new IllegalArgumentException(second.getResultType().toString());
-		return createBooleanExpression(ExpressionType.LogicalAnd, first, second);
+		return createBooleanExpression(BinaryExpressionType.LogicalAnd, first, second);
 	}
 
 	/**
@@ -464,7 +454,7 @@ public abstract class Expression {
 	 *         properties set to the specified values.
 	 */
 	public static BinaryExpression bitwiseAnd(Expression first, Expression second) {
-		return createIntegral(ExpressionType.BitwiseAnd, first, second);
+		return createIntegral(BinaryExpressionType.BitwiseAnd, first, second);
 	}
 
 	/**
@@ -486,7 +476,7 @@ public abstract class Expression {
 			throw new IllegalArgumentException(first.getResultType().toString());
 		if (!second.isBoolean())
 			throw new IllegalArgumentException(second.getResultType().toString());
-		return createBooleanExpression(ExpressionType.LogicalOr, first, second);
+		return createBooleanExpression(BinaryExpressionType.LogicalOr, first, second);
 	}
 
 	/**
@@ -502,7 +492,7 @@ public abstract class Expression {
 	 *         properties set to the specified values.
 	 */
 	public static BinaryExpression bitwiseOr(Expression first, Expression second) {
-		return createIntegral(ExpressionType.BitwiseOr, first, second);
+		return createIntegral(BinaryExpressionType.BitwiseOr, first, second);
 	}
 
 	/**
@@ -521,7 +511,7 @@ public abstract class Expression {
 	 *         second parameter equals to -1.
 	 */
 	public static Expression exclusiveOr(Expression first, Expression second) {
-		if (second.getExpressionType() == ExpressionType.Constant) {
+		if (second instanceof ConstantExpression) {
 			ConstantExpression csecond = (ConstantExpression) second;
 			if (isIntegral(csecond.getResultType())) {
 				if (((Number) csecond.getValue()).intValue() == -1)
@@ -529,7 +519,7 @@ public abstract class Expression {
 			}
 		}
 
-		return createIntegral(ExpressionType.ExclusiveOr, first, second);
+		return createIntegral(BinaryExpressionType.ExclusiveOr, first, second);
 	}
 
 	/**
@@ -546,7 +536,7 @@ public abstract class Expression {
 		if (!array.getResultType().isArray())
 			throw new IllegalArgumentException(array.getResultType().toString());
 
-		return new UnaryExpression(ExpressionType.ArrayLength, Integer.TYPE, array);
+		return new UnaryExpression(UnaryExpressionType.ArrayLength, Integer.TYPE, array);
 	}
 
 	/**
@@ -569,7 +559,7 @@ public abstract class Expression {
 		if (index.getResultType() != Integer.TYPE)
 			throw new IllegalArgumentException("index:" + index.getResultType().toString());
 
-		return new BinaryExpression(ExpressionType.ArrayIndex, arrayType.getComponentType(), null, array, index);
+		return new BinaryExpression(BinaryExpressionType.ArrayIndex, arrayType.getComponentType(), array, index);
 	}
 
 	/**
@@ -587,7 +577,7 @@ public abstract class Expression {
 	public static Expression convert(Expression e, Class<?> to) {
 		if (e.getResultType() == to)
 			return e;
-		return new UnaryExpression(ExpressionType.Convert, to, e);
+		return new UnaryExpression(UnaryExpressionType.Convert, to, e);
 	}
 
 	/**
@@ -635,7 +625,7 @@ public abstract class Expression {
 	public static UnaryExpression negate(Expression e) {
 		if (!e.isNumeric())
 			throw new IllegalArgumentException(e.getResultType().toString());
-		return new UnaryExpression(ExpressionType.Negate, e.getResultType(), e);
+		return new UnaryExpression(UnaryExpressionType.Negate, e.getResultType(), e);
 	}
 
 	/**
@@ -682,7 +672,7 @@ public abstract class Expression {
 	 *         {@link ConstantExpression} with value equals to 'type'.
 	 */
 	public static BinaryExpression instanceOf(Expression e, Expression type) {
-		return new BinaryExpression(ExpressionType.InstanceOf, Boolean.TYPE, null, e, type);
+		return new BinaryExpression(BinaryExpressionType.InstanceOf, Boolean.TYPE, e, type);
 	}
 
 	/**
@@ -700,42 +690,25 @@ public abstract class Expression {
 	 * @return The {@link Expression} that results from calling the appropriate
 	 *         factory method.
 	 */
-	public static Expression unary(int expressionType, Class<?> resultType, Expression operand) {
+	public static Expression unary(UnaryExpressionType expressionType, Class<?> resultType, Expression operand) {
 		switch (expressionType) {
-		case ExpressionType.Convert:
+		case Convert:
 			return convert(operand, resultType);
-		case ExpressionType.ArrayLength:
+		case ArrayLength:
 			return arrayLength(operand);
-		case ExpressionType.Negate:
+		case Negate:
 			return negate(operand);
-		case ExpressionType.BitwiseNot:
+		case BitwiseNot:
 			return bitwiseNot(operand);
-		case ExpressionType.LogicalNot:
+		case LogicalNot:
 			return logicalNot(operand);
-		case ExpressionType.IsNull:
+		case IsNull:
 			return isNull(operand);
 		default:
 			throw new IllegalArgumentException("expressionType");
 		}
 	}
 
-	/**
-	 * Creates a {@link Expression}, given an operand and binary operator, by
-	 * calling the appropriate factory method.
-	 * 
-	 * @param expressionType
-	 *            The {@link ExpressionType} that specifies the type of binary
-	 *            operation.
-	 * @param first
-	 *            An {@link Expression} that represents the left operand.
-	 * @param second
-	 *            An {@link Expression} that represents the right operand.
-	 * @return The {@link Expression} that results from calling the appropriate
-	 *         factory method.
-	 */
-	public static Expression binary(int expressionType, Expression first, Expression second) {
-		return binary(expressionType, null, first, second);
-	}
 
 	/**
 	 * Creates a {@link Expression}, given an operand and binary operator, by
@@ -744,8 +717,6 @@ public abstract class Expression {
 	 * @param expressionType
 	 *            The {@link ExpressionType} that specifies the type of binary
 	 *            operation.
-	 * @param operator
-	 *            An {@link Expression} that represents the operator.
 	 * @param first
 	 *            An {@link Expression} that represents the left operand.
 	 * @param second
@@ -753,89 +724,60 @@ public abstract class Expression {
 	 * @return The {@link Expression} that results from calling the appropriate
 	 *         factory method.
 	 */
-	public static Expression binary(int expressionType, Expression operator, Expression first, Expression second) {
+	public static Expression binary(BinaryExpressionType expressionType, Expression first, Expression second) {
 
 		switch (expressionType) {
-		case ExpressionType.Add:
+		case Add:
 			return add(first, second);
-		case ExpressionType.BitwiseAnd:
+		case BitwiseAnd:
 			return bitwiseAnd(first, second);
-		case ExpressionType.LogicalAnd:
+		case LogicalAnd:
 			return logicalAnd(first, second);
-		case ExpressionType.ArrayIndex:
+		case ArrayIndex:
 			return arrayIndex(first, second);
-		case ExpressionType.Coalesce:
+		case Coalesce:
 			return coalesce(first, second);
-		case ExpressionType.Conditional:
-			return condition(operator, first, second);
-		case ExpressionType.Divide:
+		case Divide:
 			return divide(first, second);
-		case ExpressionType.Equal:
+		case Equal:
 			return equal(first, second);
-		case ExpressionType.ExclusiveOr:
+		case ExclusiveOr:
 			return exclusiveOr(first, second);
-		case ExpressionType.GreaterThan:
+		case GreaterThan:
 			return greaterThan(first, second);
-		case ExpressionType.GreaterThanOrEqual:
+		case GreaterThanOrEqual:
 			return greaterThanOrEqual(first, second);
-		case ExpressionType.LeftShift:
+		case LeftShift:
 			return leftShift(first, second);
-		case ExpressionType.LessThan:
+		case LessThan:
 			return lessThan(first, second);
-		case ExpressionType.LessThanOrEqual:
+		case LessThanOrEqual:
 			return lessThanOrEqual(first, second);
-		case ExpressionType.Modulo:
+		case Modulo:
 			return modulo(first, second);
-		case ExpressionType.Multiply:
+		case Multiply:
 			return multiply(first, second);
-		case ExpressionType.NotEqual:
+		case NotEqual:
 			return notEqual(first, second);
-		case ExpressionType.BitwiseOr:
+		case BitwiseOr:
 			return bitwiseOr(first, second);
-		case ExpressionType.LogicalOr:
+		case LogicalOr:
 			return logicalOr(first, second);
-		case ExpressionType.RightShift:
+		case RightShift:
 			return rightShift(first, second);
-		case ExpressionType.Subtract:
+		case Subtract:
 			return subtract(first, second);
-		case ExpressionType.InstanceOf:
+		case InstanceOf:
 			return instanceOf(first, second);
 		default:
 			throw new IllegalArgumentException("expressionType");
 		}
 	}
 
-	private static Expression createBooleanExpression(int expressionType, Expression first, Expression second) {
+	private static Expression createBooleanExpression(BinaryExpressionType expressionType, Expression first,
+			Expression second) {
 
-		Expression toReduce;
-		Expression toLeave;
-
-		if (first.getExpressionType() == ExpressionType.Constant) {
-			toReduce = first;
-			toLeave = second;
-		} else if (second.getExpressionType() == ExpressionType.Constant) {
-			toReduce = second;
-			toLeave = first;
-		} else {
-			toReduce = null;
-			toLeave = null;
-		}
-
-		if (toLeave != null && toLeave.isBoolean()) {
-			toReduce = TypeConverter.convert(toReduce, Boolean.TYPE);
-			switch (expressionType) {
-			case ExpressionType.Equal:
-				return (Boolean) ((ConstantExpression) toReduce).getValue() ? toLeave : logicalNot(toLeave);
-			case ExpressionType.NotEqual:
-				return (Boolean) ((ConstantExpression) toReduce).getValue() ? logicalNot(toLeave) : toLeave;
-			case ExpressionType.LogicalAnd:
-				return (Boolean) ((ConstantExpression) toReduce).getValue() ? toLeave : toReduce;
-			case ExpressionType.LogicalOr:
-				return (Boolean) ((ConstantExpression) toReduce).getValue() ? toReduce : toLeave;
-			}
-		}
-
-		return new BinaryExpression(expressionType, Boolean.TYPE, null, first, second);
+		return new BinaryExpression(expressionType, Boolean.TYPE, first, second);
 	}
 
 	public static LambdaInvocationExpression invokeLambda(LambdaExpression<?> e, List<Expression> arguments) {
@@ -938,7 +880,7 @@ public abstract class Expression {
 	 * @param arguments
 	 * @return A {@link MemberExpression} that accessed the specified member.
 	 */
-	public static MemberExpression member(int expressionType, Expression instance, Member member, Class<?> resultType,
+	public static MemberExpression member(MemberExpressionType expressionType, Expression instance, Member member, Class<?> resultType,
 			List<Class<?>> parameterTypes, List<Expression> arguments) {
 		return new MemberExpression(expressionType, instance, member, resultType, parameterTypes, arguments);
 	}
@@ -955,7 +897,7 @@ public abstract class Expression {
 	 *         instance field.
 	 */
 	public static InvocationExpression get(Expression instance, Field field) {
-		return new MemberExpression(ExpressionType.FieldAccess, instance, field, field.getType(),
+		return new MemberExpression(MemberExpressionType.FieldAccess, instance, field, field.getType(),
 				Collections.emptyList(), Collections.emptyList());
 	}
 
@@ -1013,7 +955,7 @@ public abstract class Expression {
 
 		}
 
-		return new MemberExpression(ExpressionType.MethodAccess, instance, method, method.getReturnType(),
+		return new MemberExpression(MemberExpressionType.MethodAccess, instance, method, method.getReturnType(),
 				Arrays.asList(method.getParameterTypes()), arguments);
 	}
 
@@ -1044,7 +986,7 @@ public abstract class Expression {
 	 *         specified constructor.
 	 */
 	public static InvocationExpression newInstance(Constructor<?> method, List<Expression> arguments) {
-		return new MemberExpression(ExpressionType.New, null, method, method.getDeclaringClass(),
+		return new MemberExpression(MemberExpressionType.New, null, method, method.getDeclaringClass(),
 				Arrays.asList(method.getParameterTypes()), arguments);
 	}
 
@@ -1169,23 +1111,7 @@ public abstract class Expression {
 		if (!test.isBoolean())
 			throw new IllegalArgumentException("test is " + test.getResultType());
 
-		// reduce conditional
-		if ((ifTrue.isBoolean())) {
-			Expression ifTrueStripped = stripConverts(ifTrue);
-			Expression ifFalseStripped = stripConverts(ifFalse);
-			if (ifTrueStripped.getExpressionType() == ExpressionType.Constant
-					&& ifFalseStripped.getExpressionType() == ExpressionType.Constant) {
-				ConstantExpression cfirst = (ConstantExpression) ifTrueStripped;
-				ConstantExpression csecond = (ConstantExpression) ifFalseStripped;
-				if (cfirst.getValue().equals(csecond.getValue()))
-					return ifTrue;
-
-				return convert((Boolean) cfirst.getValue() ? test : Expression.logicalNot(test),
-						ifTrue.getResultType());
-			}
-		}
-
-		return new BinaryExpression(ExpressionType.Conditional, ifTrue.getResultType(), test, ifTrue, ifFalse);
+		return new TenaryExpression(TenaryExpressionType.Conditional, ifTrue.getResultType(), test, ifTrue, ifFalse);
 	}
 
 	/**
@@ -1201,7 +1127,7 @@ public abstract class Expression {
 		if (e.getResultType().isPrimitive())
 			throw new IllegalArgumentException(e.getResultType().toString());
 
-		return new UnaryExpression(ExpressionType.IsNull, Boolean.TYPE, e);
+		return new UnaryExpression(UnaryExpressionType.IsNull, Boolean.TYPE, e);
 	}
 
 	/**
@@ -1217,7 +1143,7 @@ public abstract class Expression {
 		if (!e.isIntegral())
 			throw new IllegalArgumentException(e.getResultType().toString());
 
-		return new UnaryExpression(ExpressionType.BitwiseNot, e.getResultType(), e);
+		return new UnaryExpression(UnaryExpressionType.BitwiseNot, e.getResultType(), e);
 	}
 
 	/**
@@ -1233,54 +1159,7 @@ public abstract class Expression {
 		if (!e.isBoolean())
 			throw new IllegalArgumentException(e.getResultType().toString());
 
-		BinaryExpression be;
-
-		int type;
-		switch (e.getExpressionType()) {
-		case ExpressionType.Conditional:
-			be = (BinaryExpression) e;
-			return condition(be.getOperator(), logicalNot(be.getFirst()), logicalNot(be.getSecond()));
-
-		case ExpressionType.Constant:
-			ConstantExpression ce = (ConstantExpression) e;
-			return constant(!(Boolean) ce.getValue(), ce.getResultType());
-
-		case ExpressionType.LogicalNot:
-			UnaryExpression ue = (UnaryExpression) e;
-			return ue.getFirst();
-
-		case ExpressionType.LogicalAnd:
-			be = (BinaryExpression) e;
-			return convert(logicalOr(logicalNot(be.getFirst()), logicalNot(be.getSecond())), be.getResultType());
-
-		case ExpressionType.LogicalOr:
-			be = (BinaryExpression) e;
-			return convert(logicalAnd(logicalNot(be.getFirst()), logicalNot(be.getSecond())), be.getResultType());
-
-		case ExpressionType.Equal:
-			type = ExpressionType.NotEqual;
-			break;
-		case ExpressionType.GreaterThan:
-			type = ExpressionType.LessThanOrEqual;
-			break;
-		case ExpressionType.GreaterThanOrEqual:
-			type = ExpressionType.LessThan;
-			break;
-		case ExpressionType.LessThan:
-			type = ExpressionType.GreaterThanOrEqual;
-			break;
-		case ExpressionType.LessThanOrEqual:
-			type = ExpressionType.GreaterThan;
-			break;
-		case ExpressionType.NotEqual:
-			type = ExpressionType.Equal;
-			break;
-		default:
-			return new UnaryExpression(ExpressionType.LogicalNot, e.getResultType(), e);
-		}
-
-		be = (BinaryExpression) e;
-		return binary(type, be.getFirst(), be.getSecond());
+		return new UnaryExpression(UnaryExpressionType.LogicalNot, e.getResultType(), e);
 	}
 
 	/**
@@ -1315,7 +1194,7 @@ public abstract class Expression {
 
 	@Override
 	public int hashCode() {
-		return _expressionType ^ _resultType.hashCode();
+		return _resultType.hashCode();
 	}
 
 	@Override
@@ -1328,10 +1207,15 @@ public abstract class Expression {
 			return false;
 		final Expression other = (Expression) obj;
 
-		return Objects.equals(_expressionType, other._expressionType) && Objects.equals(_resultType, other._resultType);
+		return Objects.equals(_resultType, other._resultType);
 	}
 
 	public static ThisExpression this_(Object newThis, Class<?> resultType) {
 		return new ThisExpression(resultType, newThis);
+	}
+
+	public static Expression tenary(TenaryExpressionType expressionType, Class<?> resultType, Expression first,
+			Expression second, Expression third) {
+		return new TenaryExpression(expressionType, resultType, first, second, third);
 	}
 }

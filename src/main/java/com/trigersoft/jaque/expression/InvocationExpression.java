@@ -34,7 +34,7 @@ public abstract class InvocationExpression extends Expression {
 
 	protected InvocationExpression(int expressionType, Expression _instance, Class<?> resultType, 
 			List<Class<?>> paramTypes, List<Expression> arguments) {
-		super(expressionType, resultType);
+		super(resultType);
 		this._instance = _instance;
 		_paramTypes = paramTypes;
 		_arguments = arguments;

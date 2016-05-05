@@ -24,18 +24,19 @@ import java.util.Objects;
  * 
  * @author <a href="mailto://kostat@trigersoft.com">Konstantin Triger</a>
  */
-public final class BinaryExpression extends Expression {
+public final class TenaryExpression extends Expression {
 
 	private final Expression _first;
 	private final Expression _second;
-	private final BinaryExpressionType expressionType;
+	private final Expression _third;
+	private final TenaryExpressionType expressionType;
 
-
-	BinaryExpression(BinaryExpressionType expressionType, Class<?> resultType, Expression first, Expression second) {
+	TenaryExpression(TenaryExpressionType expressionType, Class<?> resultType, Expression first, Expression second, Expression _third) {
 		super(resultType);
 		this.expressionType = expressionType;
 		_first = first;
 		_second = second;
+		this._third = _third;
 	}
 
 	/**
@@ -59,6 +60,7 @@ public final class BinaryExpression extends Expression {
 		int result = super.hashCode();
 		result = prime * result + ((_second == null) ? 0 : _second.hashCode());
 		result = prime * result + ((_first == null) ? 0 : _first.hashCode());
+		result = prime * result + ((_third == null) ? 0 : _third.hashCode());
 		return result;
 	}
 
@@ -68,21 +70,23 @@ public final class BinaryExpression extends Expression {
 			return true;
 		if (!super.equals(obj))
 			return false;
-		if (!(obj instanceof BinaryExpression))
+		if (!(obj instanceof TenaryExpression))
 			return false;
-		final BinaryExpression other = (BinaryExpression) obj;
-		return Objects.equals(_first, other._first) && Objects.equals(_second, other._second);
+		final TenaryExpression other = (TenaryExpression) obj;
+		return Objects.equals(_first,other._first) && Objects.equals(_second, other._second);
 	}
 
 	@Override
 	public String toString() {
 		StringBuilder b = new StringBuilder();
 		b.append('(');
-		b.append(getFirst().toString());
+		b.append(_first.toString());
 		b.append(' ');
 		b.append(expressionType);
 		b.append(' ');
-		b.append(getSecond().toString());
+		b.append(_second.toString());
+		b.append(' ');
+		b.append(_third.toString());
 		b.append(')');
 		return b.toString();
 	}
@@ -91,7 +95,12 @@ public final class BinaryExpression extends Expression {
 		return _first;
 	}
 
-	public BinaryExpressionType getExpressionType() {
+	public Expression getThird() {
+		return _third;
+	}
+
+	public TenaryExpressionType getExpressionType() {
 		return expressionType;
 	}
+
 }

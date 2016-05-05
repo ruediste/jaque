@@ -30,15 +30,14 @@ import org.objectweb.asm.Type;
 
 final class ExpressionClassVisitor extends ClassVisitor {
 
-	private final ThisExpression _me;
-	private final String _method;
+	private final String _methodName;
 	private final String _methodDesc;
 
 	private Expression _result;
-	private Class<?> _type;
-	private Class<?>[] _argTypes;
-	private Type _objectType;
+	private Class<?> returnType;
+	private Class<?>[] parameterTypes;
 	private ClassLoader classLoader;
+	private Class<?> ownerType;
 
 	Expression getResult() {
 		return _result;
@@ -48,23 +47,19 @@ final class ExpressionClassVisitor extends ClassVisitor {
 		_result = result;
 	}
 
-	Class<?> getType() {
-		return _type;
+	Class<?> getReturnType() {
+		return returnType;
 	}
 
 	Class<?>[] getParameterTypes() {
 
-		return _argTypes;
+		return parameterTypes;
 	}
 
-	public ExpressionClassVisitor(Object this_, String method, String methodDescriptor, ClassLoader classLoader) {
+	public ExpressionClassVisitor(String methodName, String methodDescriptor, ClassLoader classLoader) {
 		super(Opcodes.ASM5);
 		this.classLoader = classLoader;
-		if (this_ == null)
-			_me = null;
-		else
-			_me = Expression.this_(this_, this_.getClass());
-		_method = method;
+		_methodName = methodName;
 		_methodDesc = methodDescriptor;
 	}
 
@@ -100,49 +95,37 @@ final class ExpressionClassVisitor extends ClassVisitor {
 	}
 
 	@Override
-	public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
-
-		if (!_method.equals(name) || !_methodDesc.equals(desc))
-			return null;
-
-		Type ret = Type.getReturnType(desc);
-		if (ret.getSort() == Type.VOID)
-			throw ExpressionMethodVisitor.notLambda(Opcodes.RETURN);
-
-		_type = getClass(ret);
-
-		Type[] args = Type.getArgumentTypes(desc);
-		Class<?>[] argTypes = new Class<?>[args.length];
-
-		for (int i = 0; i < args.length; i++)
-			argTypes[i] = getClass(args[i]);
-
-		if (_objectType != null && (access & Opcodes.ACC_STATIC) == 0) {
-			try {
-				Class<?> implClass = getClass(_objectType);
-				_result = Expression.invoke(Expression.parameter(implClass, 0), name, argTypes);
-
-				_argTypes = new Class<?>[argTypes.length + 1];
-				_argTypes[0] = implClass;
-				System.arraycopy(argTypes, 0, _argTypes, 1, argTypes.length);
-
-				return null;
-			} catch (Throwable e) {
-				// fallback;
-			}
-		}
-
-		_argTypes = argTypes;
-
-		return new ExpressionMethodVisitor(this, (access & Opcodes.ACC_STATIC) == 0 ? _me : null, argTypes);
+	public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+		super.visit(version, access, name, signature, superName, interfaces);
+		ownerType = getClass(Type.getObjectType(name));
 	}
 
 	@Override
-	public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+	public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
 
-		// potentially a method reference - store object type
-		if ((access & Opcodes.ACC_SYNTHETIC) == 0)
-			_objectType = Type.getObjectType(name);
-		super.visit(version, access, name, signature, superName, interfaces);
+		if (!_methodName.equals(name) || !_methodDesc.equals(desc))
+			return null;
+
+		Type ret = Type.getReturnType(desc);
+		boolean isStatic = (access & Opcodes.ACC_STATIC) != 0;
+
+		returnType = getClass(ret);
+
+		Type[] argTypes = Type.getArgumentTypes(desc);
+		Class<?>[] initialLocalVariableTypes = new Class<?>[isStatic ? argTypes.length : argTypes.length + 1];
+
+		if (!isStatic) {
+			initialLocalVariableTypes[0] = ownerType;
+		}
+
+		parameterTypes=new Class<?>[argTypes.length];
+		for (int i = 0; i < argTypes.length; i++)
+		{
+			Class<?> tmp = getClass(argTypes[i]);
+			parameterTypes[i]=tmp;
+			initialLocalVariableTypes[isStatic ? i : i + 1] = tmp;
+		}
+		return new ExpressionMethodVisitor(this, initialLocalVariableTypes);
 	}
+
 }

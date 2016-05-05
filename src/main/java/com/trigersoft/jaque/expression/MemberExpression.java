@@ -23,6 +23,7 @@ import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Member;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Represents accessing a field or method.
@@ -33,10 +34,12 @@ import java.util.List;
 public final class MemberExpression extends InvocationExpression {
 
 	private final Member _member;
+	private MemberExpressionType expressionType;
 
-	MemberExpression(int expressionType, Expression instance, Member member, Class<?> resultType,
+	MemberExpression(MemberExpressionType expressionType, Expression instance, Member member, Class<?> resultType,
 			List<Class<?>> parameterTypes, List<Expression> arguments) {
-		super(expressionType, instance, resultType, parameterTypes, arguments);
+		super(0, instance, resultType, parameterTypes, arguments);
+		this.expressionType = expressionType;
 
 		if (member instanceof AccessibleObject) {
 			AccessibleObject ao = (AccessibleObject) member;
@@ -87,11 +90,10 @@ public final class MemberExpression extends InvocationExpression {
 			return false;
 		final MemberExpression other = (MemberExpression) obj;
 
-		if (_member == null) {
-			if (other._member != null)
-				return false;
-		} else if (!_member.equals(other._member))
-			return false;
-		return true;
+		return Objects.equals(_member, other._member) && Objects.equals(expressionType, other.expressionType);
+	}
+
+	public MemberExpressionType getExpressionType() {
+		return expressionType;
 	}
 }

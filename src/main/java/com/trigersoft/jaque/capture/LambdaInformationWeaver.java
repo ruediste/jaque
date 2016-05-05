@@ -154,9 +154,10 @@ public class LambdaInformationWeaver extends ClassVisitor {
 
 		CallSite result = LambdaMetafactory.metafactory(caller, invokedName, invokedType, samMethodType, implMethod,
 				instantiatedMethodType);
-		if (CapturingLambda.class.isAssignableFrom(invokedType.returnType())) {
-
-			result = doWrap(implMethod, result);
+		Class<?> lambdaInterface = invokedType.returnType();
+		if (CapturingLambda.class.isAssignableFrom(lambdaInterface)) {
+			Method samMethod = lambdaInterface.getMethod(invokedName, samMethodType.parameterArray());
+			result = doWrap(samMethod, implMethod, result);
 		}
 		return result;
 	}
@@ -172,19 +173,21 @@ public class LambdaInformationWeaver extends ClassVisitor {
 
 		CallSite result = LambdaMetafactory.metafactory(caller, invokedName, invokedType, samMethodType, implMethod,
 				instantiatedMethodType);
-		boolean doWrap = CapturingLambda.class.isAssignableFrom(invokedType.returnType());
+		Class<?> lambdaInterface = invokedType.returnType();
+		boolean doWrap = CapturingLambda.class.isAssignableFrom(lambdaInterface);
 
 		if (!doWrap) {
 			Method usingMethod = MethodHandles.reflectAs(Method.class, usingMethodHandle);
 			doWrap = usingMethod.getParameters()[usingParameterIndex].isAnnotationPresent(Capture.class);
 		}
 		if (doWrap) {
-			result = doWrap(implMethod, result);
+			Method samMethod = lambdaInterface.getDeclaredMethod(invokedName, samMethodType.parameterArray());
+			result = doWrap(samMethod, implMethod, result);
 		}
 		return result;
 	}
 
-	private static ConstantCallSite doWrap(MethodHandle implMethod, CallSite innerCallsite)
+	private static ConstantCallSite doWrap(Method samMethod, MethodHandle implMethod, CallSite innerCallsite)
 			throws NoSuchMethodException, IllegalAccessException {
 		MethodHandle lambdaHandle = innerCallsite.dynamicInvoker();
 		Member calledMethod = MethodHandles.reflectAs(Member.class, implMethod);
@@ -192,9 +195,9 @@ public class LambdaInformationWeaver extends ClassVisitor {
 
 		MethodHandle wrapHandle = MethodHandles.publicLookup()
 				.findStatic(LambdaInformationWeaver.class, "wrap",
-						MethodType.methodType(Object.class, Member.class, Class.class, MethodHandle.class,
+						MethodType.methodType(Object.class, Method.class, Member.class, Class.class, MethodHandle.class,
 								Object[].class))
-				.bindTo(calledMethod).bindTo(lambdaInterface).bindTo(lambdaHandle)
+				.bindTo(samMethod).bindTo(calledMethod).bindTo(lambdaInterface).bindTo(lambdaHandle)
 				.asCollector(Object[].class, lambdaHandle.type().parameterCount()).asType(lambdaHandle.type());
 
 		ConstantCallSite tmp = new ConstantCallSite(wrapHandle);
@@ -206,8 +209,10 @@ public class LambdaInformationWeaver extends ClassVisitor {
 		private final Member member;
 		private final Object lambda;
 		private final Object[] capturedArgs;
+		private Method samMethod;
 
-		public InfoInvocationHandler(Member member, Object lambda, Object[] capturedArgs) {
+		public InfoInvocationHandler(Method samMethod, Member member, Object lambda, Object[] capturedArgs) {
+			this.samMethod = samMethod;
 			this.member = member;
 			this.lambda = lambda;
 			this.capturedArgs = capturedArgs;
@@ -230,14 +235,14 @@ public class LambdaInformationWeaver extends ClassVisitor {
 
 	public static LambdaExpression<?> getLambdaExpression(Object lambda) {
 		InfoInvocationHandler handler = (InfoInvocationHandler) Proxy.getInvocationHandler(lambda);
-		return LambdaExpression.parseLambdaMethod(handler.member, handler.lambda, handler.capturedArgs);
+		return LambdaExpression.parseLambdaMethod(handler.samMethod, handler.member,  handler.capturedArgs);
 	}
 
-	public static Object wrap(Member member, Class<?> lambdaInterface, MethodHandle lambdaHandle, Object[] args)
+	public static Object wrap(Method samMethod, Member member, Class<?> lambdaInterface, MethodHandle lambdaHandle, Object[] args)
 			throws Throwable {
 		Object lambda = lambdaHandle.asSpreader(Object[].class, args.length).invoke(args);
 		return Proxy.newProxyInstance(lambdaInterface.getClassLoader(), new Class<?>[] { lambdaInterface },
-				new InfoInvocationHandler(member, lambda, args));
+				new InfoInvocationHandler(samMethod, member, lambda, args));
 	}
 
 	private static class UsingParameter {

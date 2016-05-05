@@ -33,53 +33,46 @@ import org.objectweb.asm.Type;
 import com.trigersoft.jaque.expression.ExpressionStack.BranchExpression;
 
 /**
+ * Method visitor to parse a method
+ * 
  * @author <a href="mailto://kostat@trigersoft.com">Konstantin Triger</a>
  */
 
 final class ExpressionMethodVisitor extends MethodVisitor {
 
-	private static final Class<?>[] NumericTypeLookup = new Class<?>[] {
-			Integer.TYPE, Long.TYPE, Float.TYPE, Double.TYPE };
-	private static final Class<?>[] NumericTypeLookup2 = new Class<?>[] {
-			Byte.TYPE, Character.TYPE, Short.TYPE };
+	private static final Class<?>[] NumericTypeLookup = new Class<?>[] { Integer.TYPE, Long.TYPE, Float.TYPE,
+			Double.TYPE };
+	private static final Class<?>[] NumericTypeLookup2 = new Class<?>[] { Byte.TYPE, Character.TYPE, Short.TYPE };
 
-	private static final HashMap<Class<?>, Class<?>> _primitives;
+	private static final HashMap<Class<?>, Class<?>> _primitives = new HashMap<Class<?>, Class<?>>(8);
+
+	static {
+		_primitives.put(Boolean.class, Boolean.TYPE);
+		_primitives.put(Byte.class, Byte.TYPE);
+		_primitives.put(Character.class, Character.TYPE);
+		_primitives.put(Double.class, Double.TYPE);
+		_primitives.put(Float.class, Float.TYPE);
+		_primitives.put(Integer.class, Integer.TYPE);
+		_primitives.put(Long.class, Long.TYPE);
+		_primitives.put(Short.class, Short.TYPE);
+
+	}
 
 	private ExpressionStack _exprStack;
-
 	private final HashMap<Label, List<ExpressionStack>> _branches = new HashMap<Label, List<ExpressionStack>>();
 
 	private final ExpressionClassVisitor _classVisitor;
-	private final Class<?>[] _argTypes;
-	private ThisExpression _me;
+	private Class<?>[] initialLocalVariableTypes;
 
-	static {
-		HashMap<Class<?>, Class<?>> primitives = new HashMap<Class<?>, Class<?>>(
-				8);
-		primitives.put(Boolean.class, Boolean.TYPE);
-		primitives.put(Byte.class, Byte.TYPE);
-		primitives.put(Character.class, Character.TYPE);
-		primitives.put(Double.class, Double.TYPE);
-		primitives.put(Float.class, Float.TYPE);
-		primitives.put(Integer.class, Integer.TYPE);
-		primitives.put(Long.class, Long.TYPE);
-		primitives.put(Short.class, Short.TYPE);
-
-		// primitives.put(BigInteger.class, BigInteger.class);
-		// primitives.put(BigDecimal.class, BigDecimal.class);
-		//
-		// primitives.put(String.class, String.class);
-		// primitives.put(Class.class, Class.class);
-
-		_primitives = primitives;
-	}
-
-	ExpressionMethodVisitor(ExpressionClassVisitor classVisitor,
-			ThisExpression me, Class<?>[] argTypes) {
+	/**
+	 * 
+	 * @param initialLocalVariableTypes types of the values of the local variables initialized by an optional 
+	 * this reference and the parameters of the method
+	 */
+	ExpressionMethodVisitor(ExpressionClassVisitor classVisitor, Class<?>[] initialLocalVariableTypes) {
 		super(Opcodes.ASM5);
 		_classVisitor = classVisitor;
-		_me = me;
-		_argTypes = argTypes;
+		this.initialLocalVariableTypes = initialLocalVariableTypes;
 	}
 
 	private List<ExpressionStack> getBranchUsers(Label label) {
@@ -102,8 +95,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 	private void branch(Label label, Expression test) {
 		List<ExpressionStack> bl = getBranchUsers(label);
 
-		ExpressionStack.BranchExpression br = new ExpressionStack.BranchExpression(
-				_exprStack, test, label);
+		ExpressionStack.BranchExpression br = new ExpressionStack.BranchExpression(_exprStack, test, label);
 		_exprStack.push(br);
 
 		ExpressionStack left = br.getFalse();
@@ -111,15 +103,8 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 		_exprStack = br.getTrue();
 	}
 
-	private void pushZeroConstantOrReduce() {
-		Expression e = _exprStack.peek();
-		if (e.getExpressionType() == ExpressionType.Subtract) {// reduce
-			BinaryExpression be = (BinaryExpression) _exprStack.pop();
-			_exprStack.push(be.getFirst());
-			_exprStack.push(be.getSecond());
+	private void pushZeroConstant() {
 
-			return;
-		}
 		Class<?> type = _exprStack.peek().getResultType();
 		Object value;
 
@@ -173,8 +158,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 	}
 
 	@Override
-	public void visitFieldInsn(int opcode, String owner, String name,
-			String desc) {
+	public void visitFieldInsn(int opcode, String owner, String name, String desc) {
 		Expression e;
 		switch (opcode) {
 		case Opcodes.GETFIELD:
@@ -186,9 +170,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 			break;
 		case Opcodes.GETSTATIC:
 			try {
-				e = Expression
-						.get(_classVisitor.getClass(Type.getObjectType(owner)),
-								name);
+				e = Expression.get(_classVisitor.getClass(Type.getObjectType(owner)), name);
 			} catch (NoSuchFieldException nsfe) {
 				throw new RuntimeException(nsfe);
 			}
@@ -203,8 +185,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 	}
 
 	@Override
-	public void visitFrame(int type, int nLocal, Object[] local, int nStack,
-			Object[] stack) {
+	public void visitFrame(int type, int nLocal, Object[] local, int nStack, Object[] stack) {
 		throw notLambda(type);
 	}
 
@@ -375,38 +356,33 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 		case Opcodes.I2C:
 		case Opcodes.I2S:
 			first = _exprStack.pop();
-			e = Expression.convert(first, NumericTypeLookup2[opcode
-					- Opcodes.I2B]);
+			e = Expression.convert(first, NumericTypeLookup2[opcode - Opcodes.I2B]);
 			break;
 		case Opcodes.I2L:
 		case Opcodes.I2F:
 		case Opcodes.I2D:
 			first = _exprStack.pop();
-			e = Expression.convert(first, NumericTypeLookup[opcode
-					- Opcodes.I2L + 1]);
+			e = Expression.convert(first, NumericTypeLookup[opcode - Opcodes.I2L + 1]);
 			break;
 		case Opcodes.L2I:
 		case Opcodes.L2F:
 		case Opcodes.L2D:
 			int l2l = opcode > Opcodes.L2I ? 1 : 0;
 			first = _exprStack.pop();
-			e = Expression.convert(first, NumericTypeLookup[opcode
-					- Opcodes.L2I + l2l]);
+			e = Expression.convert(first, NumericTypeLookup[opcode - Opcodes.L2I + l2l]);
 			break;
 		case Opcodes.F2I:
 		case Opcodes.F2L:
 		case Opcodes.F2D:
 			int f2f = opcode == Opcodes.F2D ? 1 : 0;
 			first = _exprStack.pop();
-			e = Expression.convert(first, NumericTypeLookup[opcode
-					- Opcodes.F2I + f2f]);
+			e = Expression.convert(first, NumericTypeLookup[opcode - Opcodes.F2I + f2f]);
 			break;
 		case Opcodes.D2I:
 		case Opcodes.D2L:
 		case Opcodes.D2F:
 			first = _exprStack.pop();
-			e = Expression.convert(first, NumericTypeLookup[opcode
-					- Opcodes.D2I]);
+			e = Expression.convert(first, NumericTypeLookup[opcode - Opcodes.D2I]);
 			break;
 		case Opcodes.IRETURN:
 		case Opcodes.LRETURN:
@@ -443,8 +419,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 		_exprStack.push(e);
 	}
 
-	private static void dup(ExpressionStack stack, int fromIndex,
-			final int toIndex) {
+	private static void dup(ExpressionStack stack, int fromIndex, final int toIndex) {
 		if (fromIndex == toIndex)
 			return;
 
@@ -467,7 +442,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 
 	@Override
 	public void visitJumpInsn(int opcode, Label label) {
-		int etype;
+		BinaryExpressionType etype;
 		switch (opcode) {
 		case Opcodes.GOTO:
 
@@ -478,48 +453,48 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 		case Opcodes.JSR:
 			throw notLambda(opcode);
 		case Opcodes.IFEQ:
-			etype = ExpressionType.NotEqual; // Equal
-			pushZeroConstantOrReduce();
+			etype = BinaryExpressionType.NotEqual; // Equal
+			pushZeroConstant();
 			break;
 		case Opcodes.IFNE:
-			etype = ExpressionType.Equal; // NotEqual
-			pushZeroConstantOrReduce();
+			etype = BinaryExpressionType.Equal; // NotEqual
+			pushZeroConstant();
 			break;
 		case Opcodes.IFLT:
-			etype = ExpressionType.GreaterThanOrEqual; // LessThan
-			pushZeroConstantOrReduce();
+			etype = BinaryExpressionType.GreaterThanOrEqual; // LessThan
+			pushZeroConstant();
 			break;
 		case Opcodes.IFGE:
-			etype = ExpressionType.LessThan; // GreaterThanOrEqual
-			pushZeroConstantOrReduce();
+			etype = BinaryExpressionType.LessThan; // GreaterThanOrEqual
+			pushZeroConstant();
 			break;
 		case Opcodes.IFGT:
-			etype = ExpressionType.LessThanOrEqual; // GreaterThan
-			pushZeroConstantOrReduce();
+			etype = BinaryExpressionType.LessThanOrEqual; // GreaterThan
+			pushZeroConstant();
 			break;
 		case Opcodes.IFLE:
-			etype = ExpressionType.GreaterThan; // LessThanOrEqual
-			pushZeroConstantOrReduce();
+			etype = BinaryExpressionType.GreaterThan; // LessThanOrEqual
+			pushZeroConstant();
 			break;
 		case Opcodes.IF_ICMPEQ:
 		case Opcodes.IF_ACMPEQ: // ??
-			etype = ExpressionType.NotEqual; // Equal
+			etype = BinaryExpressionType.NotEqual; // Equal
 			break;
 		case Opcodes.IF_ICMPNE:
 		case Opcodes.IF_ACMPNE: // ??
-			etype = ExpressionType.Equal; // NotEqual
+			etype = BinaryExpressionType.Equal; // NotEqual
 			break;
 		case Opcodes.IF_ICMPLT:
-			etype = ExpressionType.GreaterThanOrEqual; // LessThan
+			etype = BinaryExpressionType.GreaterThanOrEqual; // LessThan
 			break;
 		case Opcodes.IF_ICMPGE:
-			etype = ExpressionType.LessThan; // GreaterThanOrEqual
+			etype = BinaryExpressionType.LessThan; // GreaterThanOrEqual
 			break;
 		case Opcodes.IF_ICMPGT:
-			etype = ExpressionType.LessThanOrEqual; // GreaterThan
+			etype = BinaryExpressionType.LessThanOrEqual; // GreaterThan
 			break;
 		case Opcodes.IF_ICMPLE:
-			etype = ExpressionType.GreaterThan; // LessThanOrEqual
+			etype = BinaryExpressionType.GreaterThan; // LessThanOrEqual
 			break;
 		case Opcodes.IFNULL:
 		case Opcodes.IFNONNULL:
@@ -539,8 +514,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 		branch(label, e);
 	}
 
-	private static ExpressionStack reduce(ExpressionStack first,
-			ExpressionStack second) {
+	private static ExpressionStack reduce(ExpressionStack first, ExpressionStack second) {
 
 		int fDepth = first.getDepth();
 		int sDepth = second.getDepth();
@@ -557,16 +531,13 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 				Expression right = firstB.getTrue().pop();
 				Expression left = firstB.getFalse().pop();
 				assert right.getResultType() == left.getResultType();
-				parentStack.push(Expression.condition(firstB.getTest(), right,
-						left));
+				parentStack.push(Expression.condition(firstB.getTest(), right, left));
 
 				return parentStack;
 			} else if (first.size() == 0 && second.size() == 0) {
 
-				ExpressionStack.BranchExpression firstBB = firstB.getParent()
-						.getParent();
-				ExpressionStack.BranchExpression secondBB = secondB.getParent()
-						.getParent();
+				ExpressionStack.BranchExpression firstBB = firstB.getParent().getParent();
+				ExpressionStack.BranchExpression secondBB = secondB.getParent().getParent();
 
 				if (firstBB == secondBB) {
 
@@ -594,8 +565,8 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 
 					ExpressionStack parentStack = firstBB.getParent();
 
-					ExpressionStack.BranchExpression be = new ExpressionStack.BranchExpression(
-							parentStack, rootTest, first, l);
+					ExpressionStack.BranchExpression be = new ExpressionStack.BranchExpression(parentStack, rootTest,
+							first, l);
 
 					parentStack.pop(); // old branch
 
@@ -628,16 +599,14 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 			} else
 				other = youngerBranch.get(!trueB);
 
-			Expression test = Expression.logicalAnd(
-					older.getParent().getTest(), youngTest);
+			Expression test = Expression.logicalAnd(older.getParent().getTest(), youngTest);
 
 			if (!trueB)
 				test = Expression.logicalNot(test);
 
 			ExpressionStack parentStack = older.getParent().getParent();
 
-			ExpressionStack.BranchExpression be = new ExpressionStack.BranchExpression(
-					parentStack, test, older, other);
+			ExpressionStack.BranchExpression be = new ExpressionStack.BranchExpression(parentStack, test, older, other);
 
 			parentStack.pop(); // old branch
 
@@ -699,8 +668,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 	}
 
 	@Override
-	public void visitLocalVariable(String name, String desc, String signature,
-			Label start, Label end, int index) {
+	public void visitLocalVariable(String name, String desc, String signature, Label start, Label end, int index) {
 		throw notLambda(-1);
 	}
 
@@ -715,8 +683,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 	}
 
 	@Override
-	public void visitMethodInsn(int opcode, String owner, String name,
-			String desc, boolean itf) {
+	public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
 
 		Type[] argsTypes = Type.getArgumentTypes(desc);
 
@@ -725,9 +692,8 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 			parameterTypes[i] = _classVisitor.getClass(argsTypes[i]);
 
 		Expression[] arguments = new Expression[argsTypes.length];
-		for (int i = argsTypes.length-1; i >= 0;i--) {
-			arguments[i] = TypeConverter.convert(_exprStack.pop(),
-					parameterTypes[i]);
+		for (int i = argsTypes.length - 1; i >= 0; i--) {
+			arguments[i] = TypeConverter.convert(_exprStack.pop(), parameterTypes[i]);
 		}
 
 		Expression e;
@@ -736,9 +702,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 		case Opcodes.INVOKESPECIAL:
 			if (name.equals("<init>")) {
 				try {
-					e = Expression.newInstance(
-							_exprStack.pop().getResultType(), parameterTypes,
-							arguments);
+					e = Expression.newInstance(_exprStack.pop().getResultType(), parameterTypes, arguments);
 				} catch (NoSuchMethodException nsme) {
 					throw new RuntimeException(nsme);
 				}
@@ -749,8 +713,8 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 		case Opcodes.INVOKEVIRTUAL:
 		case Opcodes.INVOKEINTERFACE:
 			try {
-				e = Expression.invoke(TypeConverter.convert(_exprStack.pop(),
-						_classVisitor.getClass(Type.getObjectType(owner))),
+				e = Expression.invoke(
+						TypeConverter.convert(_exprStack.pop(), _classVisitor.getClass(Type.getObjectType(owner))),
 						name, parameterTypes, arguments);
 			} catch (NoSuchMethodException nsme) {
 				throw new RuntimeException(nsme);
@@ -760,9 +724,8 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 		case Opcodes.INVOKESTATIC:
 		case Opcodes.INVOKEDYNAMIC:
 			try {
-				e = Expression.invoke(
-						_classVisitor.getClass(Type.getObjectType(owner)),
-						name, parameterTypes, arguments);
+				e = Expression.invoke(_classVisitor.getClass(Type.getObjectType(owner)), name, parameterTypes,
+						arguments);
 			} catch (NoSuchMethodException nsme) {
 				throw new RuntimeException(nsme);
 			}
@@ -782,20 +745,17 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 	}
 
 	@Override
-	public AnnotationVisitor visitParameterAnnotation(int arg0, String arg1,
-			boolean arg2) {
+	public AnnotationVisitor visitParameterAnnotation(int arg0, String arg1, boolean arg2) {
 		return null;
 	}
 
 	@Override
-	public void visitTableSwitchInsn(int min, int max, Label dflt,
-			Label... labels) {
+	public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
 		throw notLambda(Opcodes.TABLESWITCH);
 	}
 
 	@Override
-	public void visitTryCatchBlock(Label start, Label end, Label handler,
-			String type) {
+	public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
 		throw notLambda(-2);
 	}
 
@@ -826,13 +786,6 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 
 	@Override
 	public void visitVarInsn(int opcode, int var) {
-		if (_me != null) {
-			if (var == 0) {
-				_exprStack.push(_me);
-				return;
-			}
-			var--;
-		}
 		Class<?> type;
 		switch (opcode) {
 		case Opcodes.ISTORE:
@@ -856,11 +809,11 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 			type = Double.TYPE;
 			break;
 		case Opcodes.ALOAD:
-			type = _argTypes[var];
+			type = initialLocalVariableTypes[var];
 			break;
 		}
 
-		_exprStack.push(Expression.parameter(type, var));
+		_exprStack.push(new GetLocalVariableExpression(type, var));
 	}
 
 	static RuntimeException notLambda(int opcode) {
@@ -868,8 +821,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 		Field[] ops = Opcodes.class.getFields();
 		for (int i = 0; i < ops.length; i++) {
 			Field f = ops[i];
-			if (Modifier.isStatic(f.getModifiers())
-					&& f.getType() == Integer.TYPE) {
+			if (Modifier.isStatic(f.getModifiers()) && f.getType() == Integer.TYPE) {
 				try {
 					int test = f.getInt(null);
 					if (test == opcode) {
@@ -882,8 +834,7 @@ final class ExpressionMethodVisitor extends MethodVisitor {
 				}
 			}
 		}
-		return new IllegalArgumentException("Not a lambda expression. Opcode "
-				+ opcodeName + " is illegal.");
+		return new IllegalArgumentException("Not a lambda expression. Opcode " + opcodeName + " is illegal.");
 	}
 
 }

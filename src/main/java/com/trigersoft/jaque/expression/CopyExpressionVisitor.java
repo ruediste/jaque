@@ -25,8 +25,9 @@ import java.util.List;
  * Expression visitor visiting all nested expressions and creating the visited expression again. 
  */
 
-public abstract class SimpleExpressionVisitor implements
+public abstract class CopyExpressionVisitor implements
 		ExpressionVisitor<Expression> {
+	
 
 	protected List<Expression> visitExpressionList(List<Expression> original) {
 		if (original != null) {
@@ -63,15 +64,32 @@ public abstract class SimpleExpressionVisitor implements
 		Expression second = e.getSecond();
 		Expression visitedSecond = second.accept(this);
 
-		Expression op = e.getOperator();
-		Expression visitedOp = op != null ? op.accept(this) : op;
 
-		if (first != visitedFirst || second != visitedSecond || op != visitedOp)
-			return Expression.binary(e.getExpressionType(), visitedOp,
-					visitedFirst, visitedSecond);
+		if (first != visitedFirst || second != visitedSecond )
+			return Expression.binary(e.getExpressionType(), visitedFirst,
+					visitedSecond);
 
 		return e;
 	}
+	
+	@Override
+	public Expression visit(TenaryExpression e) {
+		Expression first = e.getFirst();
+		Expression visitedFirst = first.accept(this);
+
+		Expression second = e.getSecond();
+		Expression visitedSecond = second.accept(this);
+
+		Expression third = e.getThird();
+		Expression visitedThird = third.accept(this);
+
+		if (first != visitedFirst || second != visitedSecond || third != visitedThird)
+			return Expression.tenary(e.getExpressionType(),visitedSecond.getResultType(), visitedFirst,
+					visitedSecond, visitedThird);
+
+		return e;
+	}
+
 
 	@Override
 	public Expression visit(ConstantExpression e) {
@@ -117,6 +135,16 @@ public abstract class SimpleExpressionVisitor implements
 		if (instance!=e.getInstance() || arguments!=e.getArguments()){
 			return Expression.invokeLambda(e.getParameterTypes(), instance, arguments);
 		}
+		return e;
+	}
+	
+	@Override
+	public Expression visit(GetLocalVariableExpression e) {
+		return e;
+	}
+	
+	@Override
+	public Expression visit(CapturedArgumentExpression e) {
 		return e;
 	}
 }

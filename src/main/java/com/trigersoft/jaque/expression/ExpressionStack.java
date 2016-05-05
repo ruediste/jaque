@@ -89,7 +89,7 @@ final class ExpressionStack extends ArrayList<Expression> {
 
 		BranchExpression(ExpressionStack parent, Expression test,
 				ExpressionStack trueE, ExpressionStack falseE) {
-			super(ExpressionType.Conditional, Void.TYPE);
+			super(Void.TYPE);
 			_parent = parent;
 			_test = test;
 

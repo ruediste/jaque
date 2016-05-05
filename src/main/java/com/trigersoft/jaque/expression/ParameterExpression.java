@@ -18,7 +18,7 @@
 package com.trigersoft.jaque.expression;
 
 /**
- * Represents an indexed parameter expression.
+ * Represents a parameter of an expression.
  * 
  * @author <a href="mailto://kostat@trigersoft.com">Konstantin Triger</a>
  */
@@ -28,7 +28,7 @@ public final class ParameterExpression extends Expression {
 	private final int _index;
 
 	ParameterExpression(Class<?> resultType, int index) {
-		super(ExpressionType.Parameter, resultType);
+		super(resultType);
 
 		if (index < 0)
 			throw new IndexOutOfBoundsException("index");
@@ -55,6 +55,7 @@ public final class ParameterExpression extends Expression {
 		final int prime = 31;
 		int result = super.hashCode();
 		result = prime * result + _index;
+		result = prime * result + 8302874;
 		return result;
 	}
 

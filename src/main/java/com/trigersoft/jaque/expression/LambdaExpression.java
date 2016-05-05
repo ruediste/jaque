@@ -17,18 +17,28 @@
 
 package com.trigersoft.jaque.expression;
 
-import java.lang.ref.WeakReference;
 import java.lang.reflect.Member;
-import java.util.Collections;
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.WeakHashMap;
 import java.util.function.Function;
 
 /**
- * Describes a lambda expression. This captures a block of code that is similar
- * to a method body. Please note that this is not an {@link Expression} itself. 
+ * Describes a lambda expression consisting of
+ * <ul>
+ * <li>an expression representing the code of the lambda</li>
+ * <li>values for captured arguments</li>
+ * <li>a this instance, if applicable</li>
+ * <li>the lambda interface and the method beeing implemented, defining
+ * parameter types and return type</li>
+ * </ul>
+ * Please note that this is not an {@link Expression} itself.
+ * <p>
+ * The body expression contains a {@link ThisExpression} for references to the
+ * this instance, {@link CapturedArgumentExpression}s to reference captured
+ * arguments, which can be resolved using
+ * {@link #getValue(CapturedArgumentExpression)} and {@link ParameterExpression}
+ * s for the parameters of the lambda expression.
  * <p>
  * Use {@link #parse(Object)} method to get a lambda expression tree.
  * </p>
@@ -39,21 +49,20 @@ import java.util.function.Function;
  * @author <a href="mailto://kostat@trigersoft.com">Konstantin Triger</a>
  */
 
-public final class LambdaExpression<F>  {
+public final class LambdaExpression<F> {
 
 	private final Expression _body;
-	private final List<Class<?>> _paramTypes;
-	private final Class<?> resultType;
+	private final Method lambdaInterfaceMethod;
+	private final Object this_;
+	private final Object[] capturedArgumentValues;
 
-	private static final Map<Class<?>, WeakReference<LambdaExpression<?>>> _cache = Collections
-			.synchronizedMap(new WeakHashMap<Class<?>, WeakReference<LambdaExpression<?>>>());
-
-	LambdaExpression(Class<?> resultType, Expression body,
-			List<Class<?>> paramTypes) {
-
-		this.resultType = resultType;
-		_paramTypes = paramTypes;
-		_body = body;
+	public LambdaExpression(Method lambdaInterfaceMethod, Expression _body, Object this_,
+			Object[] capturedArgumentValues) {
+		super();
+		this.lambdaInterfaceMethod = lambdaInterfaceMethod;
+		this._body = _body;
+		this.this_ = this_;
+		this.capturedArgumentValues = capturedArgumentValues;
 	}
 
 	/**
@@ -78,28 +87,13 @@ public final class LambdaExpression<F>  {
 	 */
 	@SuppressWarnings("unchecked")
 	public static <T> LambdaExpression<T> parse(T lambda) {
-
-		LambdaExpression<T> lambdaE;
-		WeakReference<LambdaExpression<?>> wlambda = _cache.get(lambda
-				.getClass());
-		if (wlambda != null) {
-			lambdaE = (LambdaExpression<T>) wlambda.get();
-			if (lambdaE != null)
-				return (LambdaExpression<T>) Expression.lambda(lambdaE.getResultType(),
-						lambdaE.getBody().accept(new InstanceReplacer(lambda)), lambdaE.getParamTypes());
-		}
-
-		ExpressionClassCracker cracker = new ExpressionClassCracker();
-		lambdaE = (LambdaExpression<T>) cracker.lambda(lambda);
-
-		_cache.put(lambda.getClass(), new WeakReference<LambdaExpression<?>>(
-				lambdaE));
-
-		return lambdaE;
+		return (LambdaExpression<T>) new ExpressionClassCracker().lambda(lambda);
 	}
 
-	public static <T> LambdaExpression<T> parseLambdaMethod(Member member, T lambda, Object[] capturedArgs) {
-		return new ExpressionClassCracker().parseLambdaMethod(member, lambda, capturedArgs);
+	public static <T> LambdaExpression<T> parseLambdaMethod(Method lambdaInterfaceMethod, Member lambdaImplementation,
+			Object[] capturedArgs) {
+		return new ExpressionClassCracker().parseLambdaMethod(lambdaInterfaceMethod, lambdaImplementation,
+				capturedArgs);
 	}
 
 	/**
@@ -113,42 +107,21 @@ public final class LambdaExpression<F>  {
 	}
 
 	@Override
-	public int hashCode() {
-		return Objects.hash(_body,resultType,_paramTypes);
-	}
-
-	@Override
-	public boolean equals(Object obj) {
-		if (this == obj)
-			return true;
-		if (!super.equals(obj))
-			return false;
-		if (!(obj instanceof LambdaExpression))
-			return false;
-		final LambdaExpression<?> other = (LambdaExpression<?>) obj;
-		return 
-				Objects.equals(_body,other._body)&&
-				Objects.equals(resultType,other.resultType)&&
-				Objects.equals(_paramTypes,other._paramTypes);
-	}
-
-	@Override
 	public String toString() {
 		StringBuilder b = new StringBuilder();
 		b.append('(');
-		if (_paramTypes.size() > 0) {
-			for (int i = 0; i < _paramTypes.size(); i++) {
-				if (i > 0) {
-					b.append(',');
-					b.append(' ');
-				}
-				b.append(_paramTypes.get(i).getName());
-				b.append(" P");
-				b.append(i);
+		Class<?>[] paramTypes = lambdaInterfaceMethod.getParameterTypes();
+		for (int i = 0; i < paramTypes.length; i++) {
+			if (i > 0) {
+				b.append(',');
+				b.append(' ');
 			}
+			b.append(paramTypes[i].getName());
+			b.append(" P");
+			b.append(i);
 		}
 		b.append(')');
-		b.append(" -> ");
+		b.append("->");
 		b.append('{');
 		b.append(getBody().toString());
 		b.append('}');
@@ -156,24 +129,14 @@ public final class LambdaExpression<F>  {
 	}
 
 	public List<Class<?>> getParamTypes() {
-		return _paramTypes;
+		return Arrays.asList(lambdaInterfaceMethod.getParameterTypes());
 	}
 
-	public Class<?> getResultType() {
-		return resultType;
+	public Class<?> getReturnType() {
+		return lambdaInterfaceMethod.getReturnType();
 	}
 
-	private static class InstanceReplacer extends SimpleExpressionVisitor{
-
-		private Object newThis;
-		public InstanceReplacer( Object newThis) {
-			this.newThis = newThis;
-		}
-		@Override
-		public Expression visit(ThisExpression e) {
-			return Expression.this_(newThis, e.getResultType());
-		}
-		
+	public Object getValue(CapturedArgumentExpression e) {
+		return capturedArgumentValues[e.getIndex()];
 	}
-
 }

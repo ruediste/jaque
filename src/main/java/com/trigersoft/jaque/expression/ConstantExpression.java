@@ -27,7 +27,7 @@ public final class ConstantExpression extends Expression {
 	private final Object _value;
 
 	ConstantExpression(Class<?> resultType, Object value) {
-		super(ExpressionType.Constant, resultType);
+		super(resultType);
 
 		_value = value;
 	}
